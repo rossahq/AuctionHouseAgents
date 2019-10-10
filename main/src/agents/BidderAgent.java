@@ -3,6 +3,7 @@ import auctionItems.AuctionItem;
 import jade.core.AID;
 import jade.core.Agent;
 import jade.core.behaviours.Behaviour;
+import jade.core.behaviours.CyclicBehaviour;
 import jade.domain.DFService;
 import jade.domain.FIPAAgentManagement.DFAgentDescription;
 import jade.domain.FIPAAgentManagement.ServiceDescription;
@@ -85,83 +86,40 @@ public class BidderAgent extends Agent {
         return auctionItems;
     }
 
-    /**
-     * Inner class RequestPerformer.
-     * This is the behaviour used by Book-buyer agents to request seller
-     * agents the target book.
-     */
     private class RequestPerformer extends Behaviour {
-        // The template to receive replies
-        private MessageTemplate mt;
-        private int step = 0;
 
         public void action() {
-            switch (step) {
-                case 0:
-                    // Send the cfp to all sellers
-                    ACLMessage cfp = new ACLMessage(ACLMessage.CFP);
-                    cfp.addReceiver(auctioneerAgent);
-                    cfp.setContent("");
-                    cfp.setConversationId(auctionItems.get(0).desc + "bid");
-                    cfp.setReplyWith("cfp" + System.currentTimeMillis()); // Unique value
-                    myAgent.send(cfp);
-                    // Prepare the template to get proposals
-                    mt = MessageTemplate.and(MessageTemplate.MatchConversationId(auctionItems.get(0).desc + "bid"),
-                            MessageTemplate.MatchInReplyTo(cfp.getReplyWith()));
-                    step = 1;
-                    break;
-                case 1:
-                    // Receive all proposals/refusals from seller agents
-                    ACLMessage reply = myAgent.receive(mt);
-                    if (reply != null) {
-                        // Reply received
-                        if (reply.getPerformative() == ACLMessage.INFORM) {
-                            // This tells us whether the item is available
-                            boolean available  = Boolean.parseBoolean(reply.getContent());
-                            if (available = true) {
-                                step = 2;
-                            } else {
-                                doDelete();
-                            }
+            MessageTemplate mt = MessageTemplate.MatchPerformative(ACLMessage.CFP);
+            ACLMessage msg = myAgent.receive(mt);
+            if (msg != null) {
+                // CFP Message received. Process it
+                String itemName = msg.getContent();
+                ACLMessage reply = msg.createReply();
 
-            break;
-            // Send the purchase order to the seller that provided the best offer
-            ACLMessage order = new ACLMessage(ACLMessage.ACCEPT_PROPOSAL);
-            order.addReceiver(auctionerAgent);
-            order.setContent(targetBookTitle);
-            order.setConversationId("book-trade");
-            order.setReplyWith("order" + System.currentTimeMillis());
-            myAgent.send(order);
-            // Prepare the template to get the purchase order reply
-            mt = MessageTemplate.and(MessageTemplate.MatchConversationId("book-trade"),
-                    MessageTemplate.MatchInReplyTo(order.getReplyWith()));
-            step = 3;
-            break;
-            case 3:
-            // Receive the purchase order reply
-            reply = myAgent.receive(mt);
-            if (reply != null) {
-                // Purchase order reply received
-                if (reply.getPerformative() == ACLMessage.INFORM) {
-                    // Purchase successful. We can terminate
-                    System.out.println(targetBookTitle + " successfully purchased from agent " + reply.getSender().getName());
-                    System.out.println("Price = " + bestPrice);
-                    myAgent.doDelete();
-                } else {
-                    System.out.println("Attempt failed: requested book already sold.");
+                for(int i=0; i<auctionItems.size();i++){
+                    System.out.println("looking at auction : " + auctionItems.get(i).desc);
+                    System.out.println(itemName);
+                    if(auctionItems.get(i).desc.equals(itemName)){
+                        System.out.println("Bidding on " + itemName);
+                        //bidder wants the item and proposes a price
+                        reply.setPerformative(ACLMessage.PROPOSE);
+                        reply.setContent(String.valueOf(auctionItems.get(i).price));
+                    }else {
+                        // The bidder does not want the item.
+                        reply.setPerformative(ACLMessage.REFUSE);
+                        reply.setContent("declined");
+                    }
                 }
-
-                step = 4;
-            } else {
+                myAgent.send(reply);
+            }
+            else {
                 block();
             }
-            break;
         }
-
 
         @Override
         public boolean done() {
-            return (step == 4);
+            return false;
         }
     }
 
